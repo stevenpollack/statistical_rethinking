@@ -1,0 +1,289 @@
+---
+title: "Chapter 2 Practice Problems"
+author: "Steven Pollack"
+date: "13/08/2020"
+output: 
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      cache = TRUE)
+library(magrittr)
+```
+
+**2E1.** Which of the expressions below correspond to the statement: _the probability of rain on Monday?_
+
+(1) Pr(rain)
+(2) Pr(rain|Monday)
+(3) Pr(Monday|rain)
+(4) Pr(rain, Monday)/ Pr(Monday)
+
+**Solution:** (2), obviously. (4):
+$$
+\frac{Pr(\text{Monday, rain})}{Pr(\text{Monday})} = Pr(\text{rain|Monday})
+$$
+which is (2), so (2) and (4).
+
+**2E2.** Which of the following statements corresponds to the expression: _Pr(Monday|rain)?_
+
+(1) The probability of rain on Monday.
+(2) The probability of rain, given that it is Monday.
+(3) The probability that it is Monday, given that it is raining.
+(4) The probability that it is Monday and that it is raining.
+
+**Solution:** going through each:
+
+1. $PR(\text{rain|Monday})$
+2. $Pr(\text{rain|Monday})$
+3. $Pr(\text{Monday|rain})$
+4. $Pr(\text{Monday, rain})$
+
+so, only #3. is correct.
+
+**2E3.** Which of the expressions below correspond to the statement: _the probability that it is Monday, given that it is raining?_
+
+(1) Pr(Monday|rain)
+(2) Pr(rain|Monday)
+(3) Pr(rain|Monday) Pr(Monday)
+(4) Pr(rain|Monday) Pr(Monday)/ Pr(rain)
+(5) Pr(Monday|rain) Pr(rain)/ Pr(Monday)
+
+**Solution:** let's translate each:
+
+1. _the probability that it is Monday, given it is raining._ **(correct)**
+2. _the probability that it is raining, given that it is Monday._ 
+3. equal to $Pr(\text{rain, Monday})$ which is _the probability that it is raining and it is Monday._
+4. using Bayes rule, this is equal to $Pr(\text{Monday|rain})$ which is option #1 and hence **correct**.
+5. using bayes rule, this is equal to option #2.
+
+Thus, options #1 and #4.
+
+**2E4, solution:** see solution manual. The answer is more
+philosophical than you'd guess. The 70% chance is less a
+statement about the physical process and more an indictment
+of our ignorance. _"The physics of the globe toss are
+deterministic, not 'random.'"_. But since we don't really
+understand the physics of the globe toss, the process seems
+'random'.
+
+**2M1, solution:** below is code to process data of the form
+`"W,W,L"`. It'll do a grid approximation of the beta-binomial model using "W" as success and "L" and failure.
+```{r grid_approx, echo=TRUE}
+# create function to do grid approx
+grid_approx <- function(data, prior=NA, grid_length=100) {
+  d <- strsplit(data, ",")[[1]]
+  n_W <- sum(d == "W")
+  n_trials <- length(d)
+  
+  
+  # define grid
+  p_grid <- seq(from=0, to=1, length.out=grid_length)
+  dx <- diff(p_grid)
+  
+  if (is.na(prior)) {
+    # define prior (uniform)
+    prior <- rep(1, grid_length)
+  } else { # assume that prior is a function and
+    # normalize it
+    p <- sapply(p_grid, prior)
+    c <- 1/sum(p*dx) # this is our normalization constant
+    prior <- p/c
+  }
+  
+  # compute likelihood across the grid
+  likelihood <- dbinom(n_W, size=n_trials, prob=p_grid)
+  
+  # normalize
+  posterior <- (likelihood*prior)/sum(likelihood*prior*dx)
+  
+  # plot
+  plot(p_grid, posterior, type="l")
+  mtext(data)
+}
+```
+
+1.
+```{r, 2M-1}
+problems <- c("W,W,W", "W,W,W,L", "L,W,W,L,W,W,W")
+grid_approx(problems[1])
+```
+2.
+```{r 2M1-2}
+grid_approx(problems[2])
+```
+3.
+```{r 2M1-3}
+grid_approx(problems[3])
+```
+
+**2M2. solution** The step-function prior looks like
+```{r 2M2, echo=TRUE}
+grid <- seq(from=0, to=1, length.out=50)
+step_prior <- function(x) ifelse(x < 0.5, 0, 1)
+plot(grid, sapply(grid, step_prior), type="l")
+```
+
+So:
+
+1.
+```{r 2M2-1}
+grid_approx(problems[1], step_prior)
+```
+2.
+```{r 2M2-2}
+grid_approx(problems[2], step_prior)
+```
+3.
+```{r 2M2-3}
+grid_approx(problems[3], step_prior)
+```
+
+**2M3. Solution:** This is just straight Bayes Rule:
+$$\begin{align}
+P(E|L) &= \frac{P(L|E) \cdot P(E)}{P(L)} \\
+&= \frac{P(L|E) \cdot P(E)}{P(L|E)\cdot P(E) + P(L|M) \cdot P(M)} \\
+&=\frac{0.3 \cdot 0.5}{0.3\cdot0.5 + 1.0\cdot0.5} \\
+&\approx 0.2308
+\end{align}
+$$
+
+**2M4. Solution:** If you use the garden of forking data approach, you'll see there are 3/6 ways for a drawn card to reveal a black front. From those 3 ways, you have another 2/3 ways that the other side of that card can be black. Hence, $P(b=B|f=B) = 2/3$. However, you can work it out another way:
+$$
+\begin{align}
+P(b=B | f=B) &= \frac{P(f=B, b=B)}{P(f=B)} \\
+&= \frac{1/3}{3/6} \\
+&= \frac{2}{3}
+\end{align}
+$$
+
+since you know that there are only 1/3 cards that have both front and back sides that are black, and the chance that a randomly drawn front side is black is 3/6. 
+
+**2M5. Solution:** again $P(f=B, b=B) = 2/4 = 1/2$ and now $P(f=B)=5/8$ since there are 8 ways any of the four cards could be drawn, and 5 of them yield black fronts. Thus,
+$$
+P(b=B|f=B) = \frac{1/2}{5/8} = \frac{4}{5}
+$$
+
+**2M6. Solution:** using the counting method:
+
+| card | # of cards | # of black sides | # of ways to produce a black side | frequency |
+|:---:|:---:|:---:|:---:|:---:|
+| B/B | 1 | 2 | 2 | 50% |
+| B/W | 2 | 1 | 2 | 50% |
+| W/W | 3 | 0 | 0 | 0 |
+
+**2M7. Solution:**
+
+| C<sub>1</sub> | C<sub>2</sub> | # of ways to to see (B,W) | frequency |
+|:---:|:---:|:---:|:---:|:---:|
+| B/B | B/W | 2*1 | 2/8 |
+| B/B | W/W | 2*2 | 4/8 |
+| B/W | B/B | 1*0 | 0 |
+| B/W | W/W | 1*2 | 2/8 |
+| W/W | B/B | 0*0 | 0 |
+| W/W | B/W | 0*1 | 0 |
+
+So, $P(C_1 = B/B) = 2/8+4/8 = 3/4$.
+
+**2H1. Solution:** We need to calculate $P(b_2=T|b_1=T)$:
+$$
+P(b_2=T|b_1=T) = \frac{P(b_1=T, b_2=T)}{P(b_1=T)}
+$$
+However, the denominator is easier to calculate and we'll do that straight from the problem description:
+$$
+\begin{align}
+P(T) &= P(T|A)P(A) + P(T|B)P(B) \\
+&= 0.1(0.5) + 0.2(0.5) \\
+&= 0.15
+\end{align}
+$$
+Furthermore, if we assume that each birth is independent, then $P(T,T|A)=P(T|A)P(T|A)$, for example. Hence:
+$$\begin{align}
+P(T,T) &= P(T,T|A)P(A) + P(T,T)P(B) \\
+&= P(T|A)^2 P(A) + P(T|B)^2 P(B) \\
+&= \frac{1}{2}(0.1^2 + 0.2^2) \\
+&= 0.025
+\end{align}
+$$
+Thus,
+$$
+P(b_2=T|b_1=T) = \frac{P(b_1=T, b_2=T)}{P(b_1=T)} = \frac{0.025}{0.15} = \frac{1}{6} \approx 0.17
+$$
+
+**2H2. Solution:** Compute the probability that the panda in question is from species A, assuming the first birth was twins.
+
+$$\begin{align}
+P(A|T) = \frac{P(T|A)P(A)}{P(T)} = \frac{0.1 \times 0.5 }{0.15} = \frac{1}{3}
+\end{align}
+$$
+
+**2H3. Solution:** Given the second birth is a singleton, compute the posterior probability that this is from species A:
+$$\begin{align}
+P(A|T,-T) = \frac{P(A,T, -T)}{P(T, -T)}
+\end{align}
+$$
+Now, assuming that the births are independent, we'd then calculate
+$$\begin{align}
+P(A, T, -T) &= P(T, -T|A) P(A)\\
+&= P(T|A)P(-T|A) P(A)\\
+&= 0.1 \times 0.9 \times 0.5 \\
+&= 0.045
+\end{align}
+$$
+The likelihood in the denominator follows the same pattern as in 2H1:
+$$\begin{align}
+P(T,-T) &= P(T,-T|A)P(A) + P(T,-T)P(B) \\
+&= P(T|A)P(-T|A) P(A) + P(T|B) P(-T|B) P(B) \\
+&= \frac{1}{2}(0.1\times 0.9 + 0.2\times 0.8) \\
+&= 0.125
+\end{align}
+$$
+Putting it all together:
+$$\begin{align}
+P(A|T,-T) = \frac{P(A,T, -T)}{P(T, -T)} = \frac{0.045}{0.125} = 0.36
+\end{align}
+$$
+Alternatively, we could carry information from the first birth over as our new and just focus on the second birth:
+$$
+P(A^*|-T) = \frac{P(-T|A^*)P(A^*)}{P(-T)}
+$$
+where $A^*$ is the event that the panda is from species A and they've already had a pair of twins. In this way, we calculated $P(A^*)$ in 2H2 as 1/3 and $P(-T|A^*) = P(-T|A) = 0.9$ since we assume that the birth outcomes aren't correlated. So:
+$$
+P(A^*|-T) = \frac{P(-T|A^*)P(A^*)}{P(-T)} = \frac{0.9\times \frac{1}{3}}{0.9\times \frac{1}{3} + 0.8\times \frac{2}{3}}
+= 0.36
+$$
+
+**2H4. Solution:**
+
+Part 1: compute $P(s=A|t=A)$.
+$$\begin{align}
+P(s=A|t=A) &= \frac{P(t=A|s=A)P(s=A)}{P(t=A)} \\
+&= \frac{P(t=A|s=A)P(s=A)}{P(t=A|s=A)P(s=A) + P(t=A|s=B)P(s=B)} \\
+&= \frac{0.8 \times 0.5 }{0.8\times0.5 + 0.35\times0.5} \\
+&\approx 0.696
+\end{align}
+$$
+Part 2: compute $P(s=A|t=A, b_1=T, b_2=-T)$. We'll use the computation in the question 2H3 as our prior in Bayes formula:
+$$\begin{align}
+P(s=A|t=A, T, -T) &= \frac{P(s=A, t=A, T, -T)}{P(t=A, T, -T)} \\
+&= \frac{P(t=A|s=A,T,-T)P(s=A, T, -T)}{P(t=A,T,-T)} \\
+&= \frac{P(t=A|A,T,-T) P(s=A,T,-T)/P(T,-T)}{P(t=A,T,-T)/P(T,-T)} \\
+&= \frac{P(t=A|A,T,-T)P(s=A|T,-T)}{P(t=A|T,-T)}
+\end{align}
+$$
+
+Note that the test's specificity isn't affected by birth data so $P(t=A|s=A, T, -T) = P(t=A|s=A) = 0.8$. Furthermore, we calculated $P(s=A|T,-T) = 0.36$. So, it remains to figure out the denominator. Using the definition of conditional probability, it follows that
+$$\begin{align}
+P(t=A|T,-T) &= P(t=A|s=A, T,-T)P(s=A|T,-T) + P(t=A|s=b,T,-T) P(s=B|T,-T) \\
+&= 0.8\times 0.36 + 0.35\times 0.64 \\
+&=0.512
+\end{align}$$
+
+So, putting it all together:
+
+$$\begin{align}
+P(s=A|t=A, T, -T) &= \frac{0.8\times0.36}{0.512} \\
+&= 0.5625
+\end{align}$$
