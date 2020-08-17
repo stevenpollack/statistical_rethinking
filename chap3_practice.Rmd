@@ -1,0 +1,256 @@
+---
+title: "Chapter 3 Practice Problems"
+author: "Steven Pollack"
+date: "2020-08-14"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+```{r knitr_options, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      cache = TRUE,
+                      comment = '',
+                      collapse=FALSE)
+library(magrittr)
+library(rethinking)
+```
+
+
+```{r make_samples}
+p_grid <-seq(from=0,to=1,length.out=1000)
+prior <-rep(1,1000)
+likelihood <-dbinom(6,size=9,prob=p_grid)
+posterior <-likelihood*prior
+posterior <-posterior/sum(posterior)
+set.seed(100)
+samples <-sample(p_grid,prob=posterior,size=1e4,replace=TRUE)
+```
+
+**3E1. Solution:**
+```{r echo=TRUE}
+(mean(samples < 0.2)*100) %>%  paste0("%") %>% cat
+```
+
+**3E2. Solution:**
+```{r echo=TRUE}
+(mean(samples > 0.8)*100) %>%  paste0("%") %>% cat
+```
+
+**3E3. Solution:**
+```{r echo=TRUE}
+(mean(samples <= 0.8 & samples >= 0.2)*100) %>%  paste0("%") %>% cat
+```
+
+**3E4. Solution:**
+```{r echo=TRUE}
+quantile(samples, probs=0.2)
+```
+
+**3E5. Solution:**
+```{r echo=TRUE}
+quantile(samples, probs=0.8)
+```
+
+**3E6. Solution:**
+```{r echo=TRUE}
+rethinking::HPDI(samples, prob=0.66)
+```
+
+**3E7. Solution:**
+```{r echo=TRUE}
+rethinking::PI(samples, prob=0.66)
+```
+
+**3M1. Solution:** Using the code in the beginning of the section:
+```{r echo=TRUE}
+p_grid <-seq(from=0,to=1,length.out=1000)
+prior <-rep(1,1000)
+likelihood <-dbinom(8,size=15,prob=p_grid)
+posterior <-likelihood*prior
+posterior <-posterior/sum(posterior)
+set.seed(100)
+samples <-sample(p_grid,prob=posterior,size=1e4,replace=TRUE)
+dens(samples, show.HPDI = 0.9)
+mtext("posterior density with 8/15 W and uniform prior")
+```
+
+**3M2. Solution:**
+```{r}
+HPDI(samples, prob=0.9)
+```
+
+**3M3. Solution:**
+```{r post_prediction1, echo=TRUE}
+# for each sample, p, draw from the binom distribution
+# to simulate a globe toss
+set.seed(1234)
+post_predictions <-
+  rbinom(n=length(samples), size=15, prob=samples)
+
+mean(post_predictions == 8) %>% cat
+```
+
+**3M4. Solution:**
+```{r post_prediction2, echo=TRUE}
+# for each sample, p, draw from the binom distribution
+# to simulate a globe toss
+set.seed(1234)
+post_predictions <-
+  rbinom(n=length(samples), size=9, prob=samples)
+
+mean(post_predictions == 6) %>% cat
+```
+
+**3M5. Solution:**
+```{r echo=TRUE}
+p_grid <-seq(from=0,to=1,length.out=1000)
+prior2 <- (p_grid > 0.5)
+likelihood <-dbinom(8,size=15,prob=p_grid)
+posterior2 <-likelihood*prior2
+posterior2 <-posterior2/sum(posterior2)
+set.seed(100)
+samples2 <-
+  sample(p_grid,prob=posterior2,size=1e4,replace=TRUE)
+```
+The 90% HPDI:
+```{r}
+HPDI(samples2, prob=0.9)
+```
+Our new HPDI is now, clearly, bounded at 50% (since the prior puts no weight there), and so our posterior for $p$ is tightly hanging between 50-71%, despite the naive point-estimate for $\hat{p}=`r round(8/15, 3)`$.
+
+```{r}
+dens(samples2, show.HPDI = 0.9)
+mtext("density estimate for posterior given step-function prior")
+```
+
+The posterior predictions:
+
+1. The chance of exactly 8 waters:
+```{r post-predictions3}
+set.seed(1234)
+post_predictions <-
+  rbinom(n=length(samples), size=15, prob=samples2)
+
+mean(post_predictions == 8) %>% cat
+```
+2. The chance of 6 waters in 9 tosses:
+```{r post-predictions4}
+set.seed(1234)
+post_predictions <-
+  rbinom(n=length(samples), size=9, prob=samples2)
+
+mean(post_predictions == 6) %>% cat
+```
+
+The posterior predictions don't vary too much -- the prediction of 8 W in 15 trials is close to that of the uniform prior's; however the prediction for the 6/9 is noticeably higher.
+
+**3M6. Solution:** Using the beta-binomial conjugate prior we know that our posterior will be a beta random variable, if we allow our prior to be a beta. Moreover, if we assume our prior is uniform and hence $\pi \sim {\beta}eta(1,1)$, then $p \sim {\beta}(a = 1+W, b = T-W+1)$ and thus,
+$$\begin{align}
+\sigma_{p}^2 &= \frac{ab}{(a+b)^2(a+b+1)} \\
+&= \frac{(1+W)(T-W+1)}{T^2 (T+1)}
+\end{align}$$
+
+After some basic algebra:
+$$\begin{align}
+\Omega(T^{-2}) = \sigma_p^2(T) = O(T^{-1})
+\end{align}$$
+
+Since we can do a rough approximation of the beta density with a bell curve, when the beta parameters are sufficiently large, we can estimate the mass inside a particular number of standard deviations via a normal approximation. In particular, 99% of the beta distribution will lie within 2.58 standard deviations from the mean. Thus, we need $5\sigma \approx 0.05$, or $\sigma \approx 10^{-2}$ which we can hope to achieve with $10^2 \leq T \leq 10^4$. After playing with some numbers:
+```{r}
+var_beta <- function(a,b) {
+  (a*b)/((a+b)^2*(a+b+1))
+}
+set.seed(1234)
+tosses <- c(100, 1000, 2500, 5000, 1e4)
+calc_var <- function(tosses) {
+  W <- rbinom(n=1, size=tosses, prob=0.5)
+  post <- rbeta(n = 1e4, shape1 = 1+W, shape2=1+tosses-W)
+  output <- var_beta(1+W, 1+tosses-W) %>% sqrt()
+  data.table(tosses=tosses, sd = output, width=PI(post, prob=0.99) %>% diff())
+}
+lapply(tosses, calc_var) %>% rbindlist %>% knitr::kable()
+```
+
+
+```{r}
+data(homeworkch3) # load birth1 & birth2
+```
+**3H1. Solution:** We've got to make some assumptions here. First, the births of one family are independent of the births in another. Furthermore, inside a particular family: $B_i \sim Bern(p)$ which has independence and a shared probability of the birth being a boy baked in. Hence, we're assuming the following model:
+$$\begin{align}
+B_{1,1} + B_{1,2} + \cdots + B_{200,1} + B_{200,2} &\sim Bin(200, p) \\
+p &\sim Unif(0,1)
+\end{align}$$
+
+So, here's a plot of the posterior density, and the value that maximizes it (the MAP):
+```{r echo=TRUE}
+# make our grid
+p_grid <- seq(from=0, to=1, length.out=1e3)
+prior <- rep(1, length(p_grid)) # uniform
+likelihood <- dbinom(sum(birth1+birth2), size=2*length(birth1), prob=p_grid)
+posterior <- prior*likelihood
+posterior <- posterior/sum(posterior)
+plot(posterior ~ p_grid, type='l')
+p_grid[which.max(posterior)] %>% cat
+```
+
+**3H2. Solution:**
+```{r, echo=TRUE}
+probs <- c(0.5, 0.89, 0.97)
+set.seed(1234)
+samples <-
+  sample(p_grid, size=1e4, replace=TRUE, prob=posterior)
+output <-
+  sapply(probs, function(prob) HPDI(samples, prob)) %>% t
+rownames(output) <- paste0(probs*100, "%")
+colnames(output) <- c("lowerbound", "upperbound")
+knitr::kable(output)
+```
+
+**3H3. Solution:** using our posterior samples for p, we get the following posterior predictions:
+```{r}
+MAP <- p_grid[which.max(posterior)]
+post_pred <- rbinom(n=1e4, size=200, prob=samples)
+simplehist(post_pred)
+abline(v=sum(birth1+birth2), col='red')
+```
+
+The red line is at `r sum(birth1+birth2)` which is the actual count from our data, while the posterior mode is:
+```{r}
+table(post_pred)[which.max(table(post_pred))]
+```
+which accords with our data.
+
+**3H4. Solution:** Using the same posterior samples:
+```{r}
+sim_boys <-
+  rbinom(n=1e4, size=100, prob=samples)
+simplehist(sim_boys)
+abline(v=sum(birth1), col='red')
+```
+
+Moreover, the chance that our posterior predictions were below `r sum(birth1)` -- the observed count of first-born boys -- is `r paste0(100*mean(sim_boys <= sum(birth1)), "%")`. While this isn't an amazing fit, it's well within the HPDI of 89%:
+```{r}
+knitr::kable(HPDI(sim_boys) %>% t)
+```
+
+**3H5. Solution:** Let's visually inspect whether there's any relationship between sex of the first born child and sex of the second:
+
+```{r}
+first_females <- which(birth1 == 0)
+simplehist(birth2[first_females])
+```
+
+This gives us a strong association between female first borns and male second borns. Simulating the amount of boys that may have come second, inside these families with first born girls, but using our posterior samples produces a model that does a terrible time fitting our observed data (red line):
+```{r}
+birth3 <- birth2[first_females]
+n_boys <- sum(birth3)
+sim_boys2 <-
+  rbinom(n=1e4, size=length(birth3), prob=samples)
+simplehist(sim_boys2)
+abline(v=n_boys, col='red')
+HPDI(sim_boys2)
+```
+
+There is critical information visible here that wasn't taken into account when our model was first made. Namely, we assume that the sex of the children are independent. Thus, the model above simulated `r length(birth3)` trials, and given the MAP of around 55%, would lead us to expect around `r round(MAP*length(birth3))` boys. But given the strong association between birth genders, our naive simulation will necessarily under-estimate the number of male births, given it won't know whether the preceding sibling was male or female.
