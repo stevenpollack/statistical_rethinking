@@ -1,0 +1,297 @@
+---
+title: "Chapter 4 Practice Problems"
+author: "Steven Pollack"
+date: "2020-08-17"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+---
+```{r knitr_options, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      cache = TRUE,
+                      comment = '',
+                      collapse=FALSE)
+library(magrittr)
+library(rethinking)
+```
+
+**4E1. Solution:** The data is labeled by $y_i$ and thus
+$$ y_i \sim \text{Normal}(\mu,\sigma) $$
+is your likelihood. An interesting note from the solution manual
+
+> _... a likelihood is effectively a prior for the residuals._
+
+**4E2. Solution:** The two parameters in the posterior are $\mu$ and $\sigma$.
+
+**4E3. Solution:**
+$$\begin{align}
+P(m,s|Y=y) &= \frac{P(\mu=m)P(\sigma=s)\mathcal{L}(Y=y|m,s)}{\int_{\mu}\int_{\sigma} P(m,s,y) \, d\sigma \, d\mu} \\
+&=\frac{\mathcal{N}(m;0,10)\, Exp(s;1) \, \mathcal{N}(y;m,s)}{\iint_{\mathbb{R}^{+}\times\mathbb{R}}\mathcal{N}(\mu;0,10)\, Exp(\sigma;1) \, \mathcal{N}(y;\mu,\sigma) \, d\mu \, d\sigma}
+\end{align}$$
+
+**4E4. Solution:** The line $\mu_i = \alpha + \beta x_i$ is the linear model.
+
+**4E5. Solution:** There are 3 parameters in the posterior: $\alpha, \beta, \sigma$. $\mu$ is not a paramater since it is entirely determined by $\alpha, \beta, x$.
+
+**4M1. Solution:** Simulating from the prior and displaying the density of $y_i$:
+
+```{r echo=TRUE}
+sim_size=1e4
+set.seed(1234)
+mu <- rnorm(sim_size, sd=10)
+sigma <- rexp(sim_size)
+ys <- rnorm(sim_size, mu, sigma)
+dens(ys)
+```
+
+**4M2. Solution:** Translating into a `quap` formula:
+```{r echo=TRUE}
+m4.2 <-
+  alist(
+    y ~ dnorm(mu, sigma),
+    mu ~ dnorm(0, 10),
+    sigma ~ dexp(1)
+  )
+```
+
+**4M3. Solution:** as a mathematical model:
+$$\begin{align}
+y_i &\sim \mathcal{N}(\mu_i, \sigma) \\
+\mu_i &= \alpha + \beta\,x_i \\
+\alpha &\sim \mathcal{N}(0,10) \\
+\beta &\sim \mathcal{U}(0,1) \\
+\sigma &\sim Exp(1)
+\end{align}$$
+
+**4M4. Solution:**
+Let's assume we're working with high schoolers, so that we can expect a leveling out of height as we conclude our study:
+$$\begin{align}
+h_{ij} &\sim \mathcal{N}(\mu_{ij}, \sigma) \\
+\mu_{ij} &= \alpha + \beta_1 y_j - \beta_2 y_j^2 \;\; (y_j \in \{1,2,3\}) \\
+\alpha &\sim \mathcal{N}(100,10) \\
+\beta_1 &\sim \mathcal{N}(0,10) \\
+\beta_2 &\sim \text{lognormal}(0,1) \\
+\sigma &\sim Exp(1)
+\end{align}$$
+Where $h_{ij}$ is the height for student $i$ at year $j$ ($y_j \in \{1,2,3\}$) and while $\mu_{ij}$ is indexed for each student and year, it's clear that once $\alpha, \beta_{1}, \beta_{2}, \sigma$ are chosen, $\mu_{ij}$ is the same for each student, in a given year... So that's not amazing. Better yet would be extra predictors like gender, or something that was auto-regressive, where $\mu_{ij}$ involved $h_{i(j-1)}$.
+
+To get an idea of what our priors actually mean, let's plot them:
+
+```{r 4m4}
+set.seed(1234)
+sim_size <- 10 # number of students
+ys <- 1:3 # years
+a <- rnorm(sim_size, 100, 10)
+b1 <- rnorm(sim_size, 0, 10)
+b2 <- rlnorm(sim_size, 0, 1)
+sigma <- rexp(sim_size, 1)
+
+# make mu
+calc_mu <- function(y, a, b1, b2) a + b1*y - b2*y^2
+
+dt <- data.table(student_id = 1:sim_size,
+                 a = a,
+                 b1 = b1,
+                 b2 = b2,
+                 sigma = sigma)
+dt[, `:=`(mu1 = calc_mu(1, a, b1, b2),
+          mu2 = calc_mu(2, a, b1, b2),
+          mu3 = calc_mu(3, a, b1, b2))]
+dt[, `:=`(year1 = rnorm(1, mu1, sigma),
+          year2 = rnorm(1, mu2, sigma),
+          year3 = rnorm(1, mu3, sigma)),
+   by = student_id]
+
+dens(a)
+mtext("a")
+dens(b1)
+mtext("beta_1")
+dens(b2)
+mtext("beta_2")
+p1 <-
+  dt[,list(year=ys,mu=c(mu1,mu2,mu3)),by=student_id]
+with(p1, plot(mu ~ year, type='l'))
+mtext("mu")
+```
+
+Clearly, our priors are crap, given we have the ability for mu to have a negative slope.
+
+**4M5. Solution:** To fix our issue with the shrinking students, we can modify the functional form of $mu$:
+$$\begin{align}
+\mu &= \alpha + \beta y \, (\gamma - y) \\
+\alpha &\sim \mathcal{N}(100,10) \\
+\beta &\sim 3+\text{lognormal}(0,1) \\
+\gamma &\sim 6+\text{lognormal}(1,1)
+\end{align}$$
+and the purpose of this is to force $\mu$ to be a concave down parabola whose apex is never earlier than $y=3$. The following prior densities arise:
+
+```{r 4M5}
+set.seed(1234)
+sim_size <- 50 # number of students
+ys <- 1:3 # years
+a <- rnorm(sim_size, 100, 10)
+b <- 3+rlnorm(sim_size, 0, 1)
+g <- 6+rlnorm(sim_size, 0, 1)
+sigma <- rexp(sim_size, 1)
+
+# make mu
+calc_mu <- function(y, a, b, g) a + b*y*(g-y)
+
+dt <- data.table(student_id = 1:sim_size,
+                 a = a,
+                 b = b,
+                 g = g,
+                 sigma = sigma)
+dt[, `:=`(mu1 = calc_mu(1, a, b, g),
+          mu2 = calc_mu(2, a, b, g),
+          mu3 = calc_mu(3, a, b, g))]
+dt[, `:=`(year1 = rnorm(1, mu1, sigma),
+          year2 = rnorm(1, mu2, sigma),
+          year3 = rnorm(1, mu3, sigma)),
+   by = student_id]
+
+dens(a)
+mtext("a")
+dens(b)
+mtext("beta")
+dens(g)
+mtext("gamma")
+p1 <-
+  dt[,list(year=ys,mu=c(mu1,mu2,mu3)),by=student_id]
+with(p1, plot(mu ~ year, type='l'))
+mtext("mu")
+```
+This isn't perfect, but it might do.
+
+**4M6. Solution:** Given variance is $\sigma^2$, we just need the modeled standard deviation, $\sigma$, won't exceed $\sqrt{64}=8$. So we can model that with
+$$ \sigma \sim \mathcal{U}(0, 8) $$
+
+**4M7. Solution:**
+```{r 4m7, echo=TRUE}
+data("Howell1"); d <- Howell1; d2 <- d[d$age >= 18,]
+xbar <- mean(d2$weight)
+m4.3 <- quap(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <-a+b*(weight-xbar),
+    a ~ dnorm(178,20),
+    b ~ dlnorm(0,1),
+    sigma ~ dunif(0,50)
+  ), data=d2)
+
+m4.3b <-quap(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <-a+b*(weight),
+    a ~ dnorm(178,20),
+    b ~ dlnorm(0,1),
+    sigma ~ dunif(0,50)
+  ), data=d2, start = list(a=178, b=1, sigma=25))
+```
+
+Here's the correlation matrix for `m4.3`:
+```{r}
+samples <- extract.samples(m4.3)
+cov(samples) %>% cov2cor %>% knitr::kable()
+```
+
+Here's the correlation matrix for `m4.3b`:
+```{r}
+samples_b <- extract.samples(m4.3b)
+cov(samples_b) %>% cov2cor %>% knitr::kable()
+```
+
+The second model has stronger associations between all variables.
+
+If we make predictions from the second model:
+```{r echo=TRUE}
+library(rethinking)
+weights <- seq(from=31, to=63, by=1)
+# simulate heights:
+set.seed(1234)
+height_m4.3.b <- sim(m4.3b, data=list(weight=weights))
+height_PI <- apply(height_m4.3.b, 2, PI, prob=0.89)
+mu_m4.3.b <- link(m4.3b, data=data.frame(weight=weights))
+mu_mean <- apply(mu_m4.3.b, 2, mean)
+mu_hdpi <- apply(mu_m4.3.b, 2, PI, prob=0.89)
+
+plot(height ~ weight, data=d2, col=col.alpha(rangi2, 0.5))
+lines(weights, mu_mean)
+shade(mu_hdpi, weights)
+shade(height_PI, weights)
+```
+
+we see that we're getting the same posterior predictions.
+
+**4M8. Solution:**
+```{r echo=TRUE, cache=FALSE}
+library(splines)
+data("cherry_blossoms")
+d <- cherry_blossoms
+d2 <- d[complete.cases(d$doy),]
+knot_analysis <- function(num_knots=15, w_sd=10) {
+  
+  knot_list <-
+    quantile(d2$year, probs=seq(0,1,length.out=num_knots))
+  
+  B <- bs(d2$year,
+          knots=knot_list[-c(1,num_knots)],
+          degree=3,
+          intercept=TRUE)
+  
+  m4.7 <- quap(
+    alist(
+      D ~ dnorm(mu,sigma),
+      mu <- a+B%*%w,
+      a ~ dnorm(100,10),
+      w ~ dnorm(0,w_sd),
+      sigma ~ dexp(1)
+    ),
+    data=list(D=d2$doy,B=B, w_sd=w_sd),
+    start=list(w=rep(0,ncol(B)))
+  )
+  
+  post <- extract.samples(m4.7)
+  #w <- apply(post$w, 2, mean)
+  mu <- link(m4.7)
+  mu_mean <- apply(mu, 2, mean)
+  mu_PI <- apply(mu, 2, PI)
+  with(d2, {
+    plot(doy ~ year, col=col.alpha(rangi2, 0.3), pch=16)
+    lines(year, mu_mean)
+    shade(mu_PI, year, col=col.alpha("black", 0.5))
+    mtext(paste("knots:", num_knots, "& w_sd:", w_sd))
+  })
+}
+```
+Below is the posterior distribution for $\mu$ as a function of knots:
+```{r}
+knots <- c(5, 10, 15, 20, 25)
+knot_analysis(knots[1])
+```
+```{r}
+knot_analysis(knots[2])
+```
+```{r}
+knot_analysis(knots[3])
+```
+```{r}
+knot_analysis(knots[4])
+```
+```{r}
+knot_analysis(knots[5])
+```
+```{r}
+knot_analysis(knots[5], w_sd = 1)
+```
+```{r}
+knot_analysis(knots[5], w_sd = 5)
+```
+```{r}
+knot_analysis(knots[5], w_sd = 15)
+```
+
+
+It appears as if the prior on the weights affects how "wiggly" the splines can be, and the number knots affects how many places the spline can switch directions...
