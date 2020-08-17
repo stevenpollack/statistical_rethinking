@@ -6,3 +6,5 @@
 *.png
 *.pdf
 .Ruserdata
+*practice_cache/
+rsconnect/
