@@ -295,3 +295,104 @@ knot_analysis(knots[5], w_sd = 15)
 
 
 It appears as if the prior on the weights affects how "wiggly" the splines can be, and the number knots affects how many places the spline can switch directions...
+
+**4H1. Solution:**
+Let's use the model fit earlier in the chapter, `m4.3`:
+```{r}
+weights <- c(46.95, 43.72, 64.78, 32.59, 54.63)
+heights <- sim(m4.3, data=data.frame(weight=weights))
+apply(heights, 2, function(heights) {
+  h_bar <- mean(heights)
+  hpdi <- HPDI(heights)
+  data.table(expected_height=h_bar, lb=hpdi[1], ub=hpdi[2])
+}) %>% rbindlist() %>%
+  cbind.data.frame(data.table(weight=weights), .) %>% 
+  knitr::kable()
+```
+
+**4H2. Solution:** 
+Let's fit the under 18 data:
+```{r echo=TRUE}
+d <- Howell1; d2 <- d[d$age < 18,]
+xbar <- mean(d2$weight)
+# average child age in dataset is 7yrs old, and
+# average height for a 7yr old is 120cm
+m4 <- quap(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <-a+b*(weight-xbar),
+    a ~ dnorm(120,20),
+    b ~ dlnorm(0,1),
+    sigma ~ dunif(0,50)
+  ), data=d2)
+```
+Here are the estimates:
+```{r}
+precis(m4)
+```
+
+This indicates that for every 10 units, we can expect an change in around 27cm. To see the model's predicted heights versus the data check out the following graph:
+
+```{r}
+r <- round(range(d2$weight))
+weights <- seq(from=r[1], to=r[2], by=1)
+mu <- link(m4, data=data.frame(weight=weights))
+heights <- sim(m4, data=data.frame(weight=weights))
+mu_mean <- apply(mu, 2, mean)
+mu_hdpi <- apply(mu, 2, HPDI)
+heights_hdpi <- apply(heights, 2, HPDI)
+
+plot(d2$height ~ d2$weight)
+lines(weights, mu_mean)
+shade(mu_hdpi, weights)
+shade(heights_hdpi, weights)
+```
+
+As we can see, the data have a non-linear response to weight that isn't being captured by our linear model. In particular, the association between weight and height "levels out" as we get heavier (and most likely older). By contrast, the slope is much steeper when the weight is lower, as we're probably observing children experiencing growth spurts. If I had to change any assumptions, I'd make our model _not_ assume that the standard deviation is independent of weight/age. Clearly, there's a larger spread among possible heights when weights are under 20 units (as compared to over 25).
+
+**4H3. Solution:**
+Let's say that we want to model `height` against `log(weight)`:
+```{r echo=TRUE}
+d$log_weight <- log(d$weight)
+m5 <- quap(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <-a+b*log_weight,
+    a ~ dnorm(120,20),
+    b ~ dlnorm(0,1),
+    sigma ~ dunif(0,50)
+  ), data=d)
+```
+
+Our estimates look like:
+
+```{r, results='asis'}
+precis(m5) %>% data.frame %>% knitr::kable()
+```
+
+Which means for a 1 log-kg we can expect an increase in around 47cm.
+
+Now lets look at predictions:
+
+```{r}
+weights <- seq(from=1.5, to=4.5, length.out=100)
+mu <- link(m5, data=data.frame(log_weight=weights))
+heights <- sim(m5, data=data.frame(log_weight=weights))
+mu_mean <- apply(mu, 2, mean)
+mu_hdpi <- apply(mu, 2, HPDI)
+heights_hdpi <- apply(heights, 2, HPDI)
+
+plot(d$height ~ d$log_weight)
+lines(weights, mu_mean)
+shade(mu_hdpi, weights)
+shade(heights_hdpi, weights)
+```
+
+The model does a pretty good job fitting the data! Now let's see what happens when we change the scale back:
+
+```{r, echo=TRUE}
+plot(d$height ~ d$weight)
+shade(heights_hdpi, exp(weights), col=col.alpha("tomato", 0.33))
+shade(mu_hdpi, exp(weights), col=col.alpha("blue", 0.75))
+lines(exp(weights), mu_mean)
+```
